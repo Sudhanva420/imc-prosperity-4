@@ -7,12 +7,7 @@ import numpy as np
 class Trader:
 
     def run(self, state: TradingState):
-        """
-        Simple EMERALDS strategy:
-        - Fair value anchor at 10000
-        - Take trades only when price is past 2 deviations from fair value
-        - Always place passive quotes so we can get fills and show PnL activity
-        """
+
         print("traderData:", state.traderData)
         print("timestamp:", state.timestamp)
 
@@ -31,7 +26,7 @@ class Trader:
             orders: List[Order] = []
             print("product:", product, "buy levels:", len(order_depth.buy_orders), "sell levels:", len(order_depth.sell_orders))
             
-            # 1. EMERALDS specific logic
+            # EMERALDS specific logic
             if product == "EMERALDS":
                 acceptable_price = 10000
                 history = strategy_state.get(product, [])
@@ -48,7 +43,7 @@ class Trader:
                 deviation_threshold = max(0.5 * std_dev, 0.5)
                 strategy_state[product] = history
 
-                # Keep this conservative to avoid silent order rejections.
+                # Enforce position limits 
                 position_limit = 80
                 current_pos = state.position.get(product, 0)
                 print("EMERALDS fair:", acceptable_price, "position:", current_pos)
@@ -57,7 +52,7 @@ class Trader:
                 buy_capacity = position_limit - current_pos
                 sell_capacity = current_pos + position_limit
 
-                # Take ask if clearly cheap vs fair value.
+                # Take ask if cheap vs fair value.
                 if len(order_depth.sell_orders) != 0 and buy_capacity > 0:
                     best_ask = min(order_depth.sell_orders.keys())
                     best_ask_amount = order_depth.sell_orders[best_ask]
@@ -68,7 +63,7 @@ class Trader:
                             orders.append(Order(product, best_ask, buy_amount))
                             buy_capacity -= buy_amount
 
-                # Hit bid if clearly rich vs fair value.
+                # Hit bid if rich vs fair value.
                 if len(order_depth.buy_orders) != 0 and sell_capacity > 0:
                     best_bid = max(order_depth.buy_orders.keys())
                     best_bid_amount = order_depth.buy_orders[best_bid]
