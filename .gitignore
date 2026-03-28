@@ -1,0 +1,44 @@
+.DS_Store
+.vscode/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.python-version
+.venv/
+venv/
+env/
+
+# Jupyter internals
+.ipynb_checkpoints/
+
+# Caches / tooling
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+
+# Build artifacts
+build/
+dist/
+*.egg-info/
+
+# Local env files
+.env
+.env.*
+
+# Project data/artifacts
+Data/
+Cleaned_Data/
+
+# Logs / temp
+*.log
+*.tmp
+*.swp
+
+# Scratch notebook
+Codes/Notebooks/logs_check.ipynb
