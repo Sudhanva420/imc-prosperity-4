@@ -41,7 +41,7 @@ class Trader:
                         history.pop(0)
 
                 std_dev = float(np.std(history)) if len(history) > 10 else 1.5
-                deviation_threshold = max(0.5 * std_dev, 0.5)
+                deviation_threshold = max(2 * std_dev, 2)
                 strategy_state[product] = history
 
                 # Enforce position limits 
@@ -57,8 +57,9 @@ class Trader:
                 if len(order_depth.sell_orders) != 0 and buy_capacity > 0:
                     best_ask = min(order_depth.sell_orders.keys())
                     best_ask_amount = order_depth.sell_orders[best_ask]
+                    print("Best ask:", best_ask, "Best ask amount:", best_ask_amount)
                     if int(best_ask) <= acceptable_price - deviation_threshold:
-                        buy_amount = min(abs(best_ask_amount), buy_capacity)
+                        buy_amount = abs(min(abs(best_ask_amount), buy_capacity))
                         if buy_amount > 0:
                             print("BUY", str(buy_amount) + "x", best_ask)
                             orders.append(Order(product, best_ask, buy_amount))
@@ -68,6 +69,7 @@ class Trader:
                 if len(order_depth.buy_orders) != 0 and sell_capacity > 0:
                     best_bid = max(order_depth.buy_orders.keys())
                     best_bid_amount = order_depth.buy_orders[best_bid]
+                    print("Best bid:", best_bid, "Best bid amount:", best_bid_amount)
                     if int(best_bid) >= acceptable_price + deviation_threshold:
                         sell_amount = min(abs(best_bid_amount), sell_capacity)
                         if sell_amount > 0:
@@ -75,9 +77,21 @@ class Trader:
                             orders.append(Order(product, best_bid, -sell_amount))
                             sell_capacity -= sell_amount
                 
-
                 if len(orders) == 0:
-                    print("No EMERALDS order this tick")
+                    print("No EMERALDS through taking orders this tick")
+                    
+                quote_size = 5
+                if buy_capacity > 0:
+                    bid_quote = acceptable_price - 1
+                    bid_qty = min(quote_size, buy_capacity)
+                    orders.append(Order(product, bid_quote, bid_qty))
+                    print("MM BUY", str(bid_qty) + "x", bid_quote)
+
+                if sell_capacity > 0:
+                    ask_quote = acceptable_price + 1
+                    ask_qty = min(quote_size, sell_capacity)
+                    orders.append(Order(product, ask_quote, -ask_qty))
+                    print("MM SELL", str(ask_qty) + "x", ask_quote)
             
             result[product] = orders
     
