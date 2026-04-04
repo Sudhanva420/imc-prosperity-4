@@ -102,7 +102,7 @@ class Trader:
 
                 if len(order_depth.sell_orders) != 0 and buy_capacity > 0:
                     buy_price = 9997
-                    buy_amount = min(10, buy_capacity)
+                    buy_amount = min(40, buy_capacity)
                     if buy_amount > 0:
                         print("BUY", str(buy_amount) + "x", buy_price)
                         orders.append(Order(product, buy_price, buy_amount))
@@ -111,7 +111,7 @@ class Trader:
 
                 if len(order_depth.buy_orders) != 0 and sell_capacity > 0:
                     sell_price = 10003
-                    sell_amount = min(10, sell_capacity)
+                    sell_amount = min(40, sell_capacity)
                     if sell_amount > 0:
                         print("SELL", str(sell_amount) + "x", sell_price)
                         orders.append(Order(product, sell_price, -sell_amount))
