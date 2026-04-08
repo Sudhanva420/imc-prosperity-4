@@ -99,11 +99,27 @@ class Trader:
 
                 buy_capacity = max(0, position_limit - current_pos)
                 sell_capacity = max(0, position_limit + current_pos)
-
+                
+                wall_price_bid = max(order_depth.buy_orders, key=order_depth.buy_orders.get)
+                wall_volume = order_depth.buy_orders[wall_price_bid]
+                
+                wall_price_sell = min(order_depth.sell_orders, key=order_depth.sell_orders.get)
+                wall_volume_sell = order_depth.sell_orders[wall_price_sell]
+                
+                target_edge = 3 
+                
+                inventory_skew = int(current_pos / 10) # Aggressive skew
+                                
                 if len(order_depth.sell_orders) != 0 and buy_capacity > 0:
                     
-                    buy_price = 9997
+                    #buy_price = 9997
+                    
+                    buy_price = 10000 - target_edge - inventory_skew
+                    
+                    buy_price = max(buy_price, wall_price_bid + 1)
+                    
                     buy_amount = min(40, buy_capacity)
+                    
                     if buy_amount > 0:
                         print("BUY", str(buy_amount) + "x", buy_price)
                         orders.append(Order(product, buy_price, buy_amount))
@@ -111,8 +127,15 @@ class Trader:
                         overall_fills_bought += buy_amount
 
                 if len(order_depth.buy_orders) != 0 and sell_capacity > 0:
+                    
                     sell_price = 10003
+                    
+                    sell_price = 10000 + target_edge - inventory_skew
+                    
+                    sell_price = min(sell_price, wall_price_sell - 1)
+                    
                     sell_amount = min(40, sell_capacity)
+                    
                     if sell_amount > 0:
                         print("SELL", str(sell_amount) + "x", sell_price)
                         orders.append(Order(product, sell_price, -sell_amount))

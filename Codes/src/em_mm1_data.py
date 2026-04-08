@@ -117,6 +117,8 @@ class Trader:
                     "product": product,
                     "best_bid": best_bid,
                     "best_ask": best_ask,
+                    'best_bid_volume': order_depth.buy_orders[best_bid],
+                    'best_ask_volume': order_depth.sell_orders[best_ask],
                     "fair": acceptable_price,
                     "prev_pos": prev_pos,
                     "curr_pos": curr_pos,
