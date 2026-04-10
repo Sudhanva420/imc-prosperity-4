@@ -17,6 +17,8 @@ class Trader:
         
         self.traderData = {}
 
+        self.tomatoes_prices = []
+        
         self.POSITION_LIMITS = {
             Product.EMERALDS: 80,
             Product.TOMATOES: 80,
@@ -101,9 +103,98 @@ class Trader:
                 buy_order_volume += abs(sent_quantity)
     
         return buy_order_volume, sell_order_volume
+    
+    def tomatoes_orders(self, order_depth: OrderDepth, threshold: int, window: int, position: int, position_limit: int) -> List[Order]:
+        orders: List[Order] = []
+
+        buy_order_volume = 0
+        sell_order_volume = 0
+
+        if len(order_depth.sell_orders) != 0 and len(order_depth.buy_orders) != 0:
+            
+            # finding the walls to be used
+            bid_prices = sorted(order_depth.buy_orders.keys(), reverse=True)
+            ask_prices = sorted(order_depth.sell_orders.keys())  
+            
+            bid_wall = bid_prices[0]
+            ask_wall = ask_prices[0]
+
+            for price in bid_prices:
+                if abs(order_depth.buy_orders[price]) >= threshold:
+                    bid_wall = price
+                    break
+            
+            for price in ask_prices:
+                if abs(order_depth.sell_orders[price]) >= threshold: # threshold check
+                    ask_wall = price
+                    break
+            
+            # fair value calculation
+            wall_mid = (bid_wall + ask_wall) / 2.0
+            alpha = 2 / (window + 1)
+            
+            prev_ema = getattr(self, 'tomatoes_ema', None)
+            
+            if prev_ema is None:
+                self.tomatoes_ema = wall_mid
+            else:
+                self.tomatoes_ema = (alpha * wall_mid) + ((1 - alpha) * prev_ema)
+            
+            fair_value = self.tomatoes_ema
+            
+            # ARB Taker
+            best_ask = ask_prices[0]
+            best_bid = bid_prices[0]
+            
+            # Aggressive Buy
+            if best_ask < fair_value:
+                quantity = min(abs(order_depth.sell_orders[best_ask]), position_limit - position)
+                if quantity > 0:
+                    orders.append(Order(Product.TOMATOES, int(best_ask), quantity))
+                    buy_order_volume += quantity
+
+            # Aggressive Sell
+            if best_bid > fair_value:
+                quantity = min(abs(order_depth.buy_orders[best_bid]), position_limit + position)
+                if quantity > 0:
+                    orders.append(Order(Product.TOMATOES, int(best_bid), -quantity))
+                    sell_order_volume += quantity
+
+            # Inventory skew, passive quoting
+            current_pos = position + buy_order_volume - sell_order_volume
+            skew_factor = 0.5 
+            skewed_fair = fair_value - (current_pos * skew_factor)
+            
+            sigma = 0.67
+            l1_mid = (best_bid + best_ask) / 2.0
+            dist_from_fair = l1_mid - fair_value
+
+            # Hard limit check 
+            if dist_from_fair < -(0.5 * sigma) and current_pos < (position_limit * 0.7):
+                buy_price = int(round(skewed_fair - 1))
+                buy_quantity = position_limit - (position + buy_order_volume)
+                if buy_quantity > 0:
+                    orders.append(Order(Product.TOMATOES, buy_price, buy_quantity))
+                    buy_order_volume += buy_quantity
+
+            elif dist_from_fair > (0.5 * sigma) and current_pos > -(position_limit * 0.7):
+                sell_price = int(round(skewed_fair + 1))
+                sell_quantity = position_limit + (position - sell_order_volume)
+                if sell_quantity > 0:
+                    orders.append(Order(Product.TOMATOES, sell_price, -sell_quantity))
+                    sell_order_volume += sell_quantity
+
+        return orders
 
     def run(self, state: TradingState):
         
+        if state.traderData:
+            try:
+                data = jsonpickle.decode(state.traderData)
+                self.tomatoes_ema = data.get("tomatoes_ema", None)
+            except Exception:
+                self.tomatoes_ema = None
+
         result = {}
 
         if Product.EMERALDS in state.order_depths:
@@ -114,8 +205,25 @@ class Trader:
             )
             result[Product.EMERALDS] = emeralds_orders_list
         
+        if Product.TOMATOES in state.order_depths:
+            tomatoes_position = state.position.get(Product.TOMATOES, 0)
+            tomatoes_orders_list = self.tomatoes_orders(
+                state.order_depths[Product.TOMATOES], 12, 10,
+                tomatoes_position, self.POSITION_LIMITS[Product.TOMATOES]
+            )
+            result[Product.TOMATOES] = tomatoes_orders_list
+        
+        self.traderData['tomatoes_ema'] = getattr(self, 'tomatoes_ema', None)
+
+        
         traderData = jsonpickle.encode({
-            "traderData": self.traderData
+            "traderData": self.traderData,
+            "tomatoes_ema": self.traderData['tomatoes_ema'],
+        })
+        
+        
+        traderData = jsonpickle.encode({
+            "traderData": self.traderData,
         })
 
         conversions = 0
