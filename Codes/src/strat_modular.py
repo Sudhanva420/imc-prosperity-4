@@ -6,6 +6,29 @@ import numpy as np
 import math
 import jsonpickle
 
+class Logger:
+    def __init__(self):
+        self.logs = ""
+
+    def log(self, msg: str):
+        # Accumulate logs during the tick
+        self.logs += msg + "\n"
+
+    def flush(self, state: TradingState, result: dict, traderData: str):
+        # Basic JSON output that the visualizer can still read
+        output = {
+            "timestamp": state.timestamp,
+            "logs": self.logs,
+            "traderData": traderData,
+            "orders": {sym: [[o.price, o.quantity] for o in orders] for sym, orders in result.items()}
+        }
+        # Print once per tick to avoid fragmentation
+        print(json.dumps(output))
+        self.logs = ""
+
+logger = Logger()
+
+
 class Product:
     
     EMERALDS = "EMERALDS"
@@ -131,7 +154,7 @@ class Trader:
             
             # fair value calculation
             wall_mid = (bid_wall + ask_wall) / 2.0
-            alpha = 2 / (window + 1)
+            alpha = 0.1
             
             prev_ema = getattr(self, 'tomatoes_ema', None)
             
@@ -184,6 +207,8 @@ class Trader:
                     orders.append(Order(Product.TOMATOES, sell_price, -sell_quantity))
                     sell_order_volume += sell_quantity
 
+        # The "Golden Line" for debugging
+        logger.log(f"Pos:{current_pos}|EMA:{fair_value:.1f}|L1:{l1_mid}|Dist:{dist_from_fair:.2f}|WallGap:{ask_wall-bid_wall}|BestBid:{best_bid}|BestAsk:{best_ask}|SkewedFair:{skewed_fair:.1f}|")
         return orders
 
     def run(self, state: TradingState):
@@ -215,15 +240,9 @@ class Trader:
         
         self.traderData['tomatoes_ema'] = getattr(self, 'tomatoes_ema', None)
 
-        
         traderData = jsonpickle.encode({
             "traderData": self.traderData,
             "tomatoes_ema": self.traderData['tomatoes_ema'],
-        })
-        
-        
-        traderData = jsonpickle.encode({
-            "traderData": self.traderData,
         })
 
         conversions = 0
