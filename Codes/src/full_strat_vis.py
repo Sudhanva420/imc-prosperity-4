@@ -266,43 +266,55 @@ class Trader:
                     ask_wall = price
                     break
             
-            wall_mid = (bid_wall + ask_wall) / 2.0
+            #wall_mid = (bid_wall + ask_wall) / 2.0
+            #micro_price = (best_bid*abs(order_depth.sell_orders[best_ask]) + best_ask*order_depth.buy_orders[best_bid]) / (abs(order_depth.sell_orders[best_ask]) + order_depth.buy_orders[best_bid])
+            micro_price_l2 = (bid_wall*abs(order_depth.sell_orders[ask_wall]) + ask_wall*order_depth.buy_orders[bid_wall]) / (abs(order_depth.sell_orders[ask_wall]) + order_depth.buy_orders[bid_wall])
             alpha = 0.1
             prev_ema = getattr(self, 'tomatoes_ema', None)
-            self.tomatoes_ema = (alpha * wall_mid) + ((1 - alpha) * prev_ema) if prev_ema is not None else wall_mid
+            self.tomatoes_ema = (alpha * micro_price_l2) + ((1 - alpha) * prev_ema) if prev_ema is not None else micro_price_l2
             
+    
             fair_value = self.tomatoes_ema
             
+            dist_from_fair = ((best_bid + best_ask) / 2.0) - fair_value
+            
+            '''
             # ARB Taker
-            if best_ask < fair_value:
-                qty = min(abs(order_depth.sell_orders[best_ask]), position_limit - position)
+            if dist_from_fair <= -5:
+                max_buy = position_limit - position
+                qty = min(abs(order_depth.sell_orders[best_ask]), max_buy)
+                
                 if qty > 0:
                     orders.append(Order(Product.TOMATOES, int(best_ask), qty))
                     buy_order_volume += qty
-            if best_bid > fair_value:
-                qty = min(abs(order_depth.buy_orders[best_bid]), position_limit + position)
+
+            elif dist_from_fair >= 5:
+                max_sell = position_limit + position
+                qty = min(abs(order_depth.buy_orders[best_bid]), max_sell)
+                
                 if qty > 0:
                     orders.append(Order(Product.TOMATOES, int(best_bid), -qty))
                     sell_order_volume += qty
+                    
+            '''
+            #current_pos = position + buy_order_volume - sell_order_volume
+            #skewed_fair = fair_value - (current_pos * 0.5)
 
-            current_pos = position + buy_order_volume - sell_order_volume
-            skewed_fair = fair_value - (current_pos * 0.5)
-            sigma = 0.67
-            l1_mid = (best_bid + best_ask) / 2.0
-            dist_from_fair = l1_mid - fair_value
+            if position < position_limit:
+            # 5 ticks below fair
+                buy_price = int(round(min(fair_value - 5, best_ask - 1)))
+                buy_qty = position_limit - position
+                orders.append(Order(Product.TOMATOES, buy_price, buy_qty))
+                    
+            if position > -position_limit:
+                # 5 ticks above fair
+                sell_price = int(round(max(fair_value + 5, best_bid + 1)))
+                sell_qty = position_limit + position
+                orders.append(Order(Product.TOMATOES, sell_price, -sell_qty))
 
-            if dist_from_fair < -(0.5 * sigma) and current_pos < (position_limit * 0.7):
-                buy_price = int(round(skewed_fair - 1))
-                buy_qty = position_limit - (position + buy_order_volume)
-                if buy_qty > 0:
-                    orders.append(Order(Product.TOMATOES, buy_price, buy_qty))
-            elif dist_from_fair > (0.5 * sigma) and current_pos > -(position_limit * 0.7):
-                sell_price = int(round(skewed_fair + 1))
-                sell_qty = position_limit + (position - sell_order_volume)
-                if sell_qty > 0:
-                    orders.append(Order(Product.TOMATOES, sell_price, -sell_qty))
+            return orders
 
-        # FIX: Changed to logger.print
+
         logger.print(f"TOM| Pos:{current_pos}|EMA:{fair_value:.1f}|L1:{l1_mid}|Dist:{dist_from_fair:.2f}|WallGap:{ask_wall-bid_wall}|BestBid:{best_bid}|BestAsk:{best_ask}|SkewedFair:{skewed_fair:.1f}")
         return orders
 
@@ -319,7 +331,7 @@ class Trader:
             result[Product.EMERALDS] = self.emeralds_orders(state.order_depths[Product.EMERALDS], 10000, state.position.get(Product.EMERALDS, 0), 80)
         
         if Product.TOMATOES in state.order_depths:
-            result[Product.TOMATOES] = self.tomatoes_orders(state.order_depths[Product.TOMATOES], 12, 10, state.position.get(Product.TOMATOES, 0), 80)
+            result[Product.TOMATOES] = self.tomatoes_orders(state.order_depths[Product.TOMATOES], 15, 10, state.position.get(Product.TOMATOES, 0), 80)
         
         # FIX: Uniform variable name and data packing
         final_trader_data = jsonpickle.encode({
