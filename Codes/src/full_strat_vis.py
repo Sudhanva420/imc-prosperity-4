@@ -277,6 +277,12 @@ class Trader:
             fair_value = self.tomatoes_ema
             
             dist_from_fair = ((best_bid + best_ask) / 2.0) - fair_value
+
+            skew_strength = 4.0
+            inventory_ratio = position / position_limit
+            inventory_skew = inventory_ratio * skew_strength
+
+            skewed_fair = fair_value - inventory_skew
             
             '''
             # ARB Taker
@@ -302,13 +308,13 @@ class Trader:
 
             if position < position_limit:
             # 5 ticks below fair
-                buy_price = int(round(min(fair_value - 5, best_ask - 1)))
+                buy_price = int(round(min(skewed_fair - 5, best_ask - 1)))
                 buy_qty = position_limit - position
                 orders.append(Order(Product.TOMATOES, buy_price, buy_qty))
                     
             if position > -position_limit:
                 # 5 ticks above fair
-                sell_price = int(round(max(fair_value + 5, best_bid + 1)))
+                sell_price = int(round(max(skewed_fair + 5, best_bid + 1)))
                 sell_qty = position_limit + position
                 orders.append(Order(Product.TOMATOES, sell_price, -sell_qty))
 
