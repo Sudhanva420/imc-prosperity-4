@@ -3,9 +3,8 @@ from typing import Any
 
 from datamodel import Listing, Observation, Order, OrderDepth, ProsperityEncoder, Symbol, Trade, TradingState
 from typing import List
-import string
-import numpy as np
 import math
+import numpy as np
 import jsonpickle
 
 class Logger:
@@ -144,111 +143,60 @@ class Product:
     ACO = "ASH_COATED_OSMIUM"
     IPR = "INTARIAN_PEPPER_ROOT"
     
-
-        
     
 class Trader:
     
     def __init__(self):
-        
-        self.traderData = {}
-
-        self.IPR_prices = []
-        
         self.POSITION_LIMITS = {
             Product.ACO: 80,
             Product.IPR: 80,
         }
         
-    def aco_orders(self, order_depth: OrderDepth, fair_value: int, position: int, position_limit: int) -> List[Order]:
+    def aco_orders(self, order_depth: OrderDepth, position: int, position_limit: int) -> List[Order]:
         orders: List[Order] = []
 
-        buy_order_volume = 0
-        sell_order_volume = 0
-        
-        
-        alpha = 0.1
-        prev_ema = getattr(self, 'aco_ema', None)
-        self.aco_ema_ema = (alpha * micro_price_l2) + ((1 - alpha) * prev_ema) if prev_ema is not None else micro_price_l2
+        if not order_depth.buy_orders or not order_depth.sell_orders:
+            return []
+
+        best_bid = max(order_depth.buy_orders.keys())
+        best_ask = min(order_depth.sell_orders.keys())
+        mid_price = (best_bid + best_ask) / 2
+
+        if not isinstance(self.aco_prices, list):
+            self.aco_prices = []
+
+        self.aco_prices.append(mid_price)
+        if len(self.aco_prices) > 50:
+            self.aco_prices = self.aco_prices[-50:]
+
+        # Keep these as scalar diagnostics for later strategy changes.
+        recent = np.array(self.aco_prices[-50:], dtype=float)
+        recent_mean = float(np.mean(recent))
+        recent_std = float(np.std(recent)) if len(recent) > 1 else 0.0
             
-    
-        fair_value = self.aco_ema_ema
+        z_mid = (mid_price - recent_mean) / recent_std if recent_std > 0 else 0.0
+        logger.print(f"ACO stats | n={len(self.aco_prices)} mean50={recent_mean:.2f} std50={recent_std:.4f} z={z_mid:.3f}")
+
         
-        sell_prices_above = [price for price in order_depth.sell_orders.keys() if price > fair_value + 1]
-        if sell_prices_above:
-            baaf = min(sell_prices_above)
-        else:
-            baaf = fair_value + 2
+        reversion_strength = 0.5
+        #fair_value = mid_price + (reversion_strength * (recent_mean - mid_price))
 
-        buy_prices_below = [price for price in order_depth.buy_orders.keys() if price < fair_value - 1]
-        if buy_prices_below:
-            bbbf = max(buy_prices_below)
-        else:
-            bbbf = fair_value - 2
+        buy_capacity = position_limit - position
+        sell_capacity = position_limit + position  
 
-        if len(order_depth.sell_orders) != 0:
-            best_ask = min(order_depth.sell_orders.keys())
-            best_ask_amount = -1 * order_depth.sell_orders[best_ask]
-            if best_ask < fair_value:
-                quantity = min(best_ask_amount, position_limit - position)  
-                if quantity > 0:
-                    orders.append(Order(Product.ACO, int(round(best_ask)), quantity))
-                    buy_order_volume += quantity
+        sell_price = int(round(mid_price + (2.5*recent_std)))
+        buy_price = int(round(mid_price - (2.5*recent_std)))
+         
+        orders.append(Order(Product.ACO, sell_price, -sell_capacity))
 
-        if len(order_depth.buy_orders) != 0:
-            best_bid = max(order_depth.buy_orders.keys())
-            best_bid_amount = order_depth.buy_orders[best_bid]
-            if best_bid > fair_value:
-                quantity = min(best_bid_amount, position_limit + position)  
-                if quantity > 0:
-                    orders.append(Order(Product.ACO, int(round(best_bid)), -1 * quantity))
-                    sell_order_volume += quantity
-        
-        buy_order_volume, sell_order_volume = self.clear_position_order(
-            orders, order_depth, position, position_limit, Product.ACO,
-            buy_order_volume, sell_order_volume, fair_value, 1)
-
-        buy_quantity = position_limit - (position + buy_order_volume)
-        if buy_quantity > 0:
-            orders.append(Order(Product.ACO, int(round(bbbf + 1)), buy_quantity))  
-
-        sell_quantity = position_limit + (position - sell_order_volume)
-        if sell_quantity > 0:
-            orders.append(Order(Product.ACO, int(round(baaf - 1)), -sell_quantity))  
+         
+        orders.append(Order(Product.ACO, buy_price, buy_capacity))
 
         return orders
     
-    def clear_position_order(
+    def ipr_orders(self, order_depth: OrderDepth, position: int, position_limit: int) -> List[Order]:
         
-        self, orders: List[Order], order_depth: OrderDepth, position: int, position_limit: int,
-        product: str, buy_order_volume: int, sell_order_volume: int, fair_value: float, width: int
-    ) -> List[Order]:
-        
-        position_after_take = position + buy_order_volume - sell_order_volume
-        fair = round(fair_value)
-        fair_for_bid = math.floor(fair_value)
-        fair_for_ask = math.ceil(fair_value)
-
-        buy_quantity = position_limit - (position + buy_order_volume)
-        sell_quantity = position_limit + (position - sell_order_volume)
-
-        if position_after_take > 0:
-            if fair_for_ask in order_depth.buy_orders.keys():
-                clear_quantity = min(order_depth.buy_orders[fair_for_ask], position_after_take)
-                sent_quantity = min(sell_quantity, clear_quantity)
-                orders.append(Order(product, int(fair_for_ask), -abs(sent_quantity)))
-                sell_order_volume += abs(sent_quantity)
-
-        if position_after_take < 0:
-            if fair_for_bid in order_depth.sell_orders.keys():
-                clear_quantity = min(abs(order_depth.sell_orders[fair_for_bid]), abs(position_after_take))
-                sent_quantity = min(buy_quantity, clear_quantity)
-                orders.append(Order(product, int(fair_for_bid), abs(sent_quantity)))
-                buy_order_volume += abs(sent_quantity)
-    
-        return buy_order_volume, sell_order_volume
-    
-    def ipr_orders(self, order_depth: OrderDepth, threshold: int, window: int, position: int, position_limit: int) -> List[Order]:
+        orders: List[Order] = []
         
         if order_depth.buy_orders and order_depth.sell_orders:
             best_bid = max(order_depth.buy_orders.keys())
@@ -257,74 +205,48 @@ class Trader:
             spread = best_ask - best_bid
         else:
             return []
-        
-        slope = 0.1
-        
-        # Reason 'Further Ahead': Where will the price be in 50 ticks?
-        # 0.1 * 50 = 5 ticks of guaranteed growth
+
+        slope = 0.101
+
         projected_mid = mid_price + (slope * 50)
         
-        orders = []
-
-        # --- THE TOXIC FILTER ---
-        if spread in [13, 14, 16]:
-            # If we see the 'Pre-Crash' spread, we don't buy. 
-            # We only provide sell liquidity way above the market.
-            if position > 0:
-                orders.append(Order("INTARIAN_PEPPER_ROOT", int(mid_price + 10), -position))
-            return orders
-
-        best_bid = max(order_depth.buy_orders.keys())
-        best_ask = min(order_depth.sell_orders.keys())
-        mid_price = (best_bid + best_ask) / 2
-
-        drift_bonus = 0.1 * 20 
-        fair_value = mid_price + drift_bonus
-
-        max_skew_adjustment = 3.0 
-        inventory_skew = (position / position_limit) * max_skew_adjustment
         
-        final_target_price = fair_value - inventory_skew
-
-        orders = []
+        logger.print(spread, mid_price, projected_mid)
         
-        # Competitive Buying (only if we have room)
         if position < position_limit:
-            buy_price = int(round(final_target_price - 1))
-            # Ensure we don't buy ABOVE the current best ask (don't cross the spread)
-            buy_price = min(buy_price, best_ask - 1)
-            orders.append(Order("IPR", buy_price, position_limit - position))
-            
-        # Competitive Selling (to cycle that +80 position)
-        if position > -position_limit:
-            sell_price = int(round(final_target_price + 1))
-            # Ensure we don't sell BELOW the current best bid
-            sell_price = max(sell_price, best_bid + 1)
-            orders.append(Order("IPR", sell_price, -(position + position_limit)))
+
+            buy_price = int(round(projected_mid - 1)) 
+            orders.append(Order(Product.IPR, buy_price, position_limit - position))
+
+        if position > 0:
+
+            sell_price = int(round(projected_mid + 2))
+            orders.append(Order(Product.IPR, sell_price, -position))
 
         return orders
-
+    
     def run(self, state: TradingState):
         if state.traderData:
             try:
                 data = jsonpickle.decode(state.traderData)
-                self.aco_ema = data.get("aco_ema", None)
-                self.ipr_ema = data.get("ipr_ema", None)
+                loaded_prices = data.get("aco_prices", [])
+                self.aco_prices = loaded_prices if isinstance(loaded_prices, list) else []
                 
             except Exception:
-                self.ipr_ema = None
+                self.aco_prices = []
+        else:
+            self.aco_prices = []
 
         result = {}
-        #if Product.ACO in state.order_depths:
-        #    result[Product.ACO] = self.aco_orders(state.order_depths[Product.ACO], 10000, state.position.get(Product.ACO, 0), 80)
+        if Product.ACO in state.order_depths:
+            result[Product.ACO] = self.aco_orders(state.order_depths[Product.ACO], state.position.get(Product.ACO, 0), 80)
         
         if Product.IPR in state.order_depths:
-            result[Product.IPR] = self.ipr_orders(state.order_depths[Product.IPR], 15, 10, state.position.get(Product.IPR, 0), 80)
+            result[Product.IPR] = self.ipr_orders(state.order_depths[Product.IPR], state.position.get(Product.IPR, 0), 80)
         
         # FIX: Uniform variable name and data packing
         final_trader_data = jsonpickle.encode({
-            "aco_ema": getattr(self, 'aco_ema', None),
-            "ipr_ema": getattr(self, 'ipr_ema', None),
+            "aco_prices": getattr(self, 'aco_prices', None),
         })
 
         conversions = 0
