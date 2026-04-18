@@ -154,7 +154,6 @@ class Trader:
         
     def aco_orders(self, order_depth: OrderDepth, position: int, position_limit: int) -> List[Order]:
         orders: List[Order] = []
-
         if not order_depth.buy_orders or not order_depth.sell_orders:
             return []
 
@@ -162,52 +161,35 @@ class Trader:
         best_ask = min(order_depth.sell_orders.keys())
         mid_price = (best_bid + best_ask) / 2
 
-        if not isinstance(self.aco_prices, list):
-            self.aco_prices = []
-
+        if not hasattr(self, 'aco_prices'): self.aco_prices = []
         self.aco_prices.append(mid_price)
-        if len(self.aco_prices) > 50:
-            self.aco_prices = self.aco_prices[-50:]
+        if len(self.aco_prices) > 50: self.aco_prices = self.aco_prices[-50:]
 
-        recent = np.array(self.aco_prices[-50:], dtype=float)
+        recent = np.array(self.aco_prices, dtype=float)
         recent_mean = float(np.mean(recent))
-        recent_std = float(np.std(recent)) if len(recent) > 1 else 0.0
-            
-        z_mid = (mid_price - recent_mean) / recent_std if recent_std > 0 else 0.0
-        logger.print(f"ACO stats | n={len(self.aco_prices)} mean50={recent_mean:.2f} std50={recent_std:.4f} z={z_mid:.3f}")
+        recent_std = float(np.std(recent)) if len(recent) > 1 else 1.0 # Floor at 1.0
 
-        # Market Taking/Sniping Logic
-        
+
+        skew = position * 0.1
+        fair_value = recent_mean - skew 
+
+        multiplier = 2.2 
+
+        buy_price = int(round(fair_value - (multiplier * recent_std)))
+        sell_price = int(round(fair_value + (multiplier * recent_std)))
+
+
+        buy_price = min(buy_price, best_bid + 2) 
+        sell_price = max(sell_price, best_ask - 2)
+
         buy_capacity = position_limit - position
         sell_capacity = position_limit + position
-        snipe_buy_vol = 0
-        snipe_sell_vol = 0
 
-        if best_ask < mid_price:
-            
-            available_vol = abs(order_depth.sell_orders[best_ask])
-            snipe_buy_vol = min(buy_capacity, available_vol)
-            orders.append(Order(Product.ACO, best_ask, snipe_buy_vol))
+        if buy_capacity > 0:
+            orders.append(Order(Product.ACO, buy_price, buy_capacity))
+        if sell_capacity > 0:
+            orders.append(Order(Product.ACO, sell_price, -sell_capacity))
 
-        if best_bid > mid_price:
-            
-            available_vol = abs(order_depth.buy_orders[best_bid])
-            snipe_sell_vol = min(sell_capacity, available_vol)
-            orders.append(Order(Product.ACO, best_bid, -snipe_sell_vol))
-            
-        #Market Making Logic
-        buy_capacity_mm = buy_capacity - snipe_buy_vol
-        sell_capacity_mm = sell_capacity - snipe_sell_vol
-
-        sell_price = int(round(mid_price + (2.5*recent_std)))
-        buy_price = int(round(mid_price - (2.5*recent_std)))
-         
-        orders.append(Order(Product.ACO, sell_price, -sell_capacity_mm))
-
-         
-        orders.append(Order(Product.ACO, buy_price, buy_capacity_mm))
-
-        logger.print(f"ACO orders | best_bid={best_bid} best_ask={best_ask} mid={mid_price:.2f} z={z_mid:.3f} buy_cap={buy_capacity} sell_cap={sell_capacity} orders={orders}")
         return orders
     
     def ipr_orders(self, order_depth: OrderDepth, position: int, position_limit: int) -> List[Order]:
